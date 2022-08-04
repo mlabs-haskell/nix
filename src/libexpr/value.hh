@@ -117,6 +117,8 @@ std::ostream & operator << (std::ostream & str, const ExternalValueBase & v);
 struct Value
 {
 private:
+    // FIXME: should be std::atomic, with readers using
+    // memory_order_relaxed and writers using memory_order_release.
     InternalType internalType;
 
     friend std::string showType(const Value & v);
@@ -141,6 +143,15 @@ public:
     inline bool isPrimOp() const { return internalType == tPrimOp; };
     inline bool isPrimOpApp() const { return internalType == tPrimOpApp; };
 
+    union {
+        struct {
+            Env * env;
+            Expr * expr;
+        } thunk;
+        struct {
+            Value * left, * right;
+        } app;
+    };
     union
     {
         NixInt integer;
@@ -178,13 +189,6 @@ public:
             Value * * elems;
         } bigList;
         Value * smallList[2];
-        struct {
-            Env * env;
-            Expr * expr;
-        } thunk;
-        struct {
-            Value * left, * right;
-        } app;
         struct {
             Env * env;
             ExprLambda * fun;
@@ -342,6 +346,21 @@ public:
         clearValue();
         internalType = tFloat;
         fpoint = n;
+    }
+
+    Value()
+    {
+    }
+
+    Value(const Value & v) = delete;
+
+    Value & operator = (const Value & v)
+    {
+        lambda.env = v.lambda.env;
+        lambda.fun = v.lambda.fun;
+        //FIXME(aciceri)
+        //type = v.type; // FIXME: memory_order_release
+        return *this;
     }
 
     bool isList() const

@@ -44,6 +44,7 @@ struct Env
     Env * up;
     unsigned short prevWith:14; // nr of levels up to next `with' environment
     enum { Plain = 0, HasWithExpr, HasWithAttrs } type:2;
+    Expr * withAttrs;
     Value * values[0];
 };
 
@@ -171,7 +172,8 @@ public:
 
 
 private:
-    SrcToStore srcToStore;
+    //SrcToStore srcToStore;
+    Sync<SrcToStore> srcToStore_;
 
     /* A cache from path names to parse trees. */
 #if HAVE_BOEHMGC
@@ -187,7 +189,8 @@ private:
 #else
     typedef std::map<Path, Value> FileEvalCache;
 #endif
-    FileEvalCache fileEvalCache;
+    //FileEvalCache fileEvalCache;
+    Sync<FileEvalCache> fileEvalCache_;
 
     SearchPath searchPath;
 
@@ -524,6 +527,7 @@ private:
     unsigned long nrListConcats = 0;
     unsigned long nrPrimOpCalls = 0;
     unsigned long nrFunctionCalls = 0;
+    unsigned long nrDerivations = 0;
 
     bool countCalls;
 
@@ -549,6 +553,7 @@ private:
     friend void prim_getAttr(EvalState & state, const PosIdx pos, Value * * args, Value & v);
     friend void prim_match(EvalState & state, const PosIdx pos, Value * * args, Value & v);
     friend void prim_split(EvalState & state, const PosIdx pos, Value * * args, Value & v);
+    friend void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * args, Value & v);
 
     friend struct Value;
 };

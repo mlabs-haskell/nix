@@ -89,21 +89,30 @@ template<typename Callable>
 void EvalState::forceValue(Value & v, Callable getPos)
 {
     if (v.isThunk()) {
-        Env * env = v.thunk.env;
-        Expr * expr = v.thunk.expr;
-        try {
-            v.mkBlackhole();
-            //checkInterrupt();
-            expr->eval(*this, *env, v);
-        } catch (...) {
-            v.mkThunk(env, expr);
-            throw;
-        }
+        //Env * env = v.thunk.env;
+        //Expr * expr = v.thunk.expr;
+        // try {
+        //     v.mkBlackhole();
+        //     //checkInterrupt();
+        //     expr->eval(*this, *env, v);
+        // } catch (...) {
+        //     v.mkThunk(env, expr);
+        //     throw;
+        // }
+
+        Value vTmp;
+        v.thunk.expr->eval(*this, *v.thunk.env, vTmp);
+        v = vTmp;
     }
-    else if (v.isApp())
-        callFunction(*v.app.left, *v.app.right, v, noPos);
-    else if (v.isBlackhole())
-        throwEvalError(getPos(), "infinite recursion encountered");
+    else if (v.isApp()) {
+        //callFunction(*v.app.left, *v.app.right, v, noPos);
+
+        Value vTmp;
+        callFunction(*v.app.left, *v.app.right, vTmp, noPos);
+        v = vTmp;
+    }
+    //else if (v.isBlackhole())
+    //    throwEvalError(getPos(), "infinite recursion encountered");
 }
 
 

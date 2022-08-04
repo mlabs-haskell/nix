@@ -6,6 +6,7 @@
 
 #include "types.hh"
 #include "chunked-vector.hh"
+#include "sync.hh"
 
 namespace nix {
 
@@ -68,23 +69,26 @@ public:
 class SymbolTable
 {
 private:
-    std::unordered_map<std::string_view, std::pair<const std::string *, uint32_t>> symbols;
-    ChunkedVector<std::string, 8192> store{16};
+    //std::unordered_map<std::string_view, std::pair<const std::string *, uint32_t>> symbols;
+    mutable Sync<ChunkedVector<std::string, 8192>> store_{16};
+    mutable Sync<std::unordered_map<std::string_view, std::pair<const std::string *, uint32_t>>> symbols_;
 
 public:
 
     Symbol create(std::string_view s)
     {
+        auto symbols(symbols_.lock());
+        auto store(store_.lock());
         // Most symbols are looked up more than once, so we trade off insertion performance
         // for lookup performance.
         // TODO: could probably be done more efficiently with transparent Hash and Equals
         // on the original implementation using unordered_set
         // FIXME: make this thread-safe.
-        auto it = symbols.find(s);
-        if (it != symbols.end()) return Symbol(it->second.second + 1);
+        auto it = symbols->find(s);
+        if (it != symbols->end()) return Symbol(it->second.second + 1);
 
-        const auto & [rawSym, idx] = store.add(std::string(s));
-        symbols.emplace(rawSym, std::make_pair(&rawSym, idx));
+        const auto & [rawSym, idx] = store->add(std::string(s));
+        symbols->emplace(rawSym, std::make_pair(&rawSym, idx));
         return Symbol(idx + 1);
     }
 
@@ -99,14 +103,16 @@ public:
 
     SymbolStr operator[](Symbol s) const
     {
-        if (s.id == 0 || s.id > store.size())
+        auto store(store_.lock());
+        if (s.id == 0 || s.id > store->size())
             abort();
-        return SymbolStr(store[s.id - 1]);
+        return SymbolStr((*store)[s.id - 1]);
     }
 
     size_t size() const
     {
-        return store.size();
+        auto store(store_.lock());
+        return store->size();
     }
 
     size_t totalSize() const;
@@ -114,7 +120,8 @@ public:
     template<typename T>
     void dump(T callback) const
     {
-        store.forEach(callback);
+        auto store(store_.lock());
+        store->forEach(callback);
     }
 };
 

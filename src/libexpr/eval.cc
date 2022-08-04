@@ -483,7 +483,8 @@ EvalState::EvalState(
 
     assert(gcInitialised);
 
-    static_assert(sizeof(Env) <= 16, "environment must be <= 16 bytes");
+    //FIXME(aciceri)
+    //static_assert(sizeof(Env) <= 16, "environment must be <= 16 bytes");
 
     /* Initialise the Nix expression search path. */
     if (!evalSettings.pureEval) {
@@ -1092,11 +1093,13 @@ inline Value * EvalState::lookupVar(Env * env, const ExprVar & var, bool noEval)
     if (!var.fromWith) return env->values[var.displ];
 
     while (1) {
+        Expr * withAttrs = env->withAttrs;
         if (env->type == Env::HasWithExpr) {
             if (noEval) return 0;
             Value * v = allocValue();
-            evalAttrs(*env->up, (Expr *) env->values[0], *v);
+            evalAttrs(*env->up, withAttrs, *v);
             env->values[0] = v;
+            env->withAttrs = 0;
             env->type = Env::HasWithAttrs;
         }
         Bindings::iterator j = env->values[0]->attrs->find(var.name);
@@ -1199,16 +1202,24 @@ void EvalState::evalFile(const Path & path_, Value & v, bool mustBeTrivial)
 {
     auto path = checkSourcePath(path_);
 
-    FileEvalCache::iterator i;
-    if ((i = fileEvalCache.find(path)) != fileEvalCache.end()) {
-        v = i->second;
-        return;
+    {
+        auto fileEvalCache(fileEvalCache_.lock());
+        FileEvalCache::iterator i;
+        
+        if ((i = fileEvalCache->find(path)) != fileEvalCache->end()) {
+            v = i->second;
+            return;
+        }
     }
 
     Path resolvedPath = resolveExprPath(path);
-    if ((i = fileEvalCache.find(resolvedPath)) != fileEvalCache.end()) {
-        v = i->second;
-        return;
+    {
+        auto fileEvalCache(fileEvalCache_.lock());
+        FileEvalCache::iterator i;
+        if ((i = fileEvalCache->find(resolvedPath)) != fileEvalCache->end()) {
+            v = i->second;
+            return;
+        }
     }
 
     printTalkative("evaluating file '%1%'", resolvedPath);
@@ -1227,8 +1238,9 @@ void EvalState::evalFile(const Path & path_, Value & v, bool mustBeTrivial)
 
 void EvalState::resetFileCache()
 {
-    fileEvalCache.clear();
-    fileParseCache.clear();
+    abort();
+    //fileEvalCache.clear();
+    //fileParseCache.clear();
 }
 
 
@@ -1261,9 +1273,11 @@ void EvalState::cacheFile(
         addErrorTrace(e, "while evaluating the file '%1%':", resolvedPath);
         throw;
     }
-
-    fileEvalCache[resolvedPath] = v;
-    if (path != resolvedPath) fileEvalCache[path] = v;
+    {
+        auto fileEvalCache(fileEvalCache_.lock());
+        (*fileEvalCache)[resolvedPath] = v;
+        if (path != resolvedPath) (*fileEvalCache)[path] = v;
+    }
 }
 
 
@@ -1538,6 +1552,8 @@ void ExprOpHasAttr::eval(EvalState & state, Env & env, Value & v)
 
     for (auto & i : attrPath) {
         state.forceValue(*vAttrs, noPos);
+        //FIXME(aciceri)
+        //assert(vAttrs->type != tAttrs || vAttrs->attrs != 0);
         Bindings::iterator j;
         auto name = getName(i, state, env);
         if (vAttrs->type() != nAttrs ||
@@ -1823,8 +1839,9 @@ void ExprWith::eval(EvalState & state, Env & env, Value & v)
     Env & env2(state.allocEnv(1));
     env2.up = &env;
     env2.prevWith = prevWith;
-    env2.type = Env::HasWithExpr;
-    env2.values[0] = (Value *) attrs;
+    //env2.type = Env::HasWithExpr;
+    //env2.values[0] = (Value *) attrs;
+    env2.withAttrs = attrs;
 
     body->eval(state, env2, v);
 }
@@ -2299,9 +2316,11 @@ std::string EvalState::copyPathToStore(PathSet & context, const Path & path)
     if (nix::isDerivation(path))
         throwEvalError("file names are not allowed to end in '%1%'", drvExtension);
 
+    auto srcToStore(srcToStore_.lock());
+
     Path dstPath;
-    auto i = srcToStore.find(path);
-    if (i != srcToStore.end())
+    auto i = srcToStore->find(path);
+    if (i != srcToStore->end())
         dstPath = store->printStorePath(i->second);
     else {
         auto p = settings.readOnlyMode
@@ -2309,7 +2328,7 @@ std::string EvalState::copyPathToStore(PathSet & context, const Path & path)
             : store->addToStore(std::string(baseNameOf(path)), checkSourcePath(path), FileIngestionMethod::Recursive, htSHA256, defaultPathFilter, repair);
         dstPath = store->printStorePath(p);
         allowPath(p);
-        srcToStore.insert_or_assign(path, std::move(p));
+        srcToStore->insert_or_assign(path, std::move(p));
         printMsg(lvlChatty, "copied source '%1%' -> '%2%'", path, dstPath);
     }
 
@@ -2485,6 +2504,7 @@ void EvalState::printStats()
         topObj.attr("nrLookups", nrLookups);
         topObj.attr("nrPrimOpCalls", nrPrimOpCalls);
         topObj.attr("nrFunctionCalls", nrFunctionCalls);
+        topObj.attr("nrDerivations", nrDerivations);
 #if HAVE_BOEHMGC
         {
             auto gc = topObj.object("gc");
