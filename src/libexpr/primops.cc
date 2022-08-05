@@ -25,6 +25,22 @@
 
 #include <cmath>
 
+#include <sys/mman.h>
+
+
+
+
+
+
+#include <fstream>
+
+
+
+#include <iostream>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <stdio.h>
+
 
 namespace nix {
 
@@ -37,7 +53,7 @@ namespace nix {
 InvalidPathError::InvalidPathError(const Path & path) :
     EvalError("path '%s' is not valid", path), path(path) {}
 
-StringMap EvalState::realiseContext(const PathSet & context)
+StringMap EvalState::realiseContext(EvalState & state, const PosIdx pos, const PathSet & context)
 {
     std::vector<DerivedPath::Built> drvs;
     StringMap res;
@@ -53,8 +69,8 @@ StringMap EvalState::realiseContext(const PathSet & context)
             res.insert_or_assign(ctxS, ctxS);
         }
     }
-
     if (drvs.empty()) return {};
+
 
     if (!evalSettings.enableImportFromDerivation)
         debugThrowLastTrace(Error(
@@ -64,9 +80,18 @@ StringMap EvalState::realiseContext(const PathSet & context)
     /* Build/substitute the context. */
     std::vector<DerivedPath> buildReqs;
     for (auto & d : drvs) buildReqs.emplace_back(DerivedPath { d });
-    store->buildPaths(buildReqs);
 
+    // Pid pid = startProcess([&]() {
+    
+    // });
+
+    // printError(hintfmt("pid is %s", pid.to_string()));
+
+    // state.pidPool.emplace(pos, pid);
+
+    store->buildPaths(buildReqs);
     /* Get all the output paths corresponding to the placeholders we had */
+
     for (auto & [drvPath, outputs] : drvs) {
         const auto outputPaths = store->queryDerivationOutputMap(drvPath);
         for (auto & outputName : outputs) {
@@ -82,7 +107,7 @@ StringMap EvalState::realiseContext(const PathSet & context)
     }
 
     /* Add the output of this derivations to the allowed
-       paths. */
+    paths. */
     if (allowedPaths) {
         for (auto & [_placeholder, outputPath] : res) {
             allowPath(store->toRealPath(outputPath));
@@ -112,9 +137,13 @@ static Path realisePath(EvalState & state, const PosIdx pos, Value & v, const Re
     }();
 
     try {
-        StringMap rewrites = state.realiseContext(context);
+        StringMap rewrites = state.realiseContext(state, pos, context);
 
+        //TODO
         auto realPath = state.toRealPath(rewriteStrings(path, rewrites), context);
+        // Env env = state.allocEnv(0);
+        // v.mkThunk(&env, v.path);
+        // v.mkPath(v.path);
 
         return flags.checkForPureEval
             ? state.checkSourcePath(realPath)
@@ -124,6 +153,88 @@ static Path realisePath(EvalState & state, const PosIdx pos, Value & v, const Re
         throw;
     }
 }
+
+static MaybePath *realiseMaybePath(EvalState & state, const PosIdx pos, Value & v, const RealisePathFlags flags = {})
+{
+    PathSet context;
+
+    auto path = [&]()
+    {
+        try {
+            return state.coerceToPath(pos, v, context);
+        } catch (Error & e) {
+            e.addTrace(state.positions[pos], "while realising the context of a path");
+            throw;
+        }
+    }();
+
+    try {
+        int descriptor = shm_open("/identifier", O_RDWR | O_CREAT, 0777);
+        if (descriptor < 0) {
+                printError("error 00");
+        }
+
+        ftruncate(descriptor, sizeof(MaybePath));
+        //void *ptr = mmap(NULL, sizeof(MaybePath), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, descriptor, 0);
+        MaybePath *maybePath = (MaybePath*) mmap(NULL, sizeof(MaybePath), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, descriptor, 0);
+
+        if (!maybePath || maybePath == MAP_FAILED) {
+                printError("error 01");
+        }
+
+        //MaybePath *maybePath = new (ptr) MaybePath;
+        maybePath->finished = false;
+    
+
+        Pid pid = startProcess([&]() {
+
+            int d = shm_open("/identifier", O_RDWR | O_CREAT, 0777);
+            if (d < 0) {
+                /* handle error */ ;
+                printError("error 10");
+            }
+
+            MaybePath *mPath = (MaybePath *) mmap(NULL, sizeof(MaybePath), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, d, 0);
+
+            if (!mPath || mPath == MAP_FAILED) {
+                /* handle error */ ;
+                printError("error 11");
+            }
+            
+            StringMap rewrites = state.realiseContext(state, pos, context);
+
+            //TODO
+            auto realPath = state.toRealPath(rewriteStrings(path, rewrites), context);
+            // Env env = state.allocEnv(0);
+            // v.mkThunk(&env, v.path);
+            // v.mkPath(v.path);
+            // auto path =  flags.checkForPureEval
+            //     ? state.checkSourcePath(realPath)
+            //     : realPath;
+            // mPath->path = path;
+
+            mPath->path = realPath;
+            mPath->finished = true;
+            
+            //_exit(0);
+
+        });
+
+        //sleep(3);
+        printError(maybePath->finished ? "finished" : "not finished");
+        printError(maybePath->path);
+
+        //printError(hintfmt("pointer in realiseMaybePath %x", maybePath));
+
+
+        return maybePath;
+
+    } catch (Error & e) {
+        e.addTrace(state.positions[pos], "while realising the context of path '%s'", path);
+        throw;
+    }
+}
+
 
 /* Add and attribute to the given attribute map from the output name to
    the output path, or a placeholder.
@@ -160,7 +271,34 @@ static void mkOutputString(
    argument. */
 static void import(EvalState & state, const PosIdx pos, Value & vPath, Value * vScope, Value & v)
 {
-    auto path = realisePath(state, pos, vPath);
+    //printError(hintfmt("ciao"));
+    printError(hintfmt("importing %s (%s)", vPath.path, showType(vPath)));
+    MaybePath *maybePath = realiseMaybePath(state, pos, vPath);
+    printError(hintfmt("imported %s (%s)", vPath.path, showType(vPath)));
+    //vPath.print(state.symbols, std::cerr, false);
+    // std::cerr << state.pidPool[pos];
+    //printError(hintfmt("pid %d", state.pidPool[pos].to_string())); 
+    //state.pidPool[pos].wait();
+  
+    // heisenbug
+    printError(hintfmt("pointer in import %x", maybePath));
+
+    while (maybePath->finished == false) {
+        sleep(1);
+        printError(hintfmt("waiting for %s: %s", maybePath->path, maybePath->finished));
+    } 
+
+    Path path = maybePath->path;
+    printError(hintfmt("path %s", maybePath->path)); 
+
+
+    // while (true) {
+    //     if (maybePath->path != "") {
+    //         path = maybePath->path;
+    //         printError(hintfmt("path %s", maybePath->path)); 
+    //         break;
+    //     }
+    // }
 
     // FIXME
     auto isValidDerivationInStore = [&]() -> std::optional<StorePath> {
@@ -171,6 +309,7 @@ static void import(EvalState & state, const PosIdx pos, Value & vPath, Value * v
             return std::nullopt;
         return storePath;
     };
+
 
     if (auto optStorePath = isValidDerivationInStore()) {
         auto storePath = *optStorePath;
@@ -355,7 +494,7 @@ void prim_exec(EvalState & state, const PosIdx pos, Value * * args, Value & v)
         commandArgs.push_back(state.coerceToString(pos, *elems[i], context, false, false).toOwned());
     }
     try {
-        auto _ = state.realiseContext(context); // FIXME: Handle CA derivations
+        auto _ = state.realiseContext(state, pos, context); // FIXME: Handle CA derivations
     } catch (InvalidPathError & e) {
         state.debugThrowLastTrace(EvalError({
             .msg = hintfmt("cannot execute '%1%', since path '%2%' is not valid",
@@ -1584,7 +1723,7 @@ static void prim_findFile(EvalState & state, const PosIdx pos, Value * * args, V
         auto path = state.coerceToString(pos, *i->value, context, false, false).toOwned();
 
         try {
-            auto rewrites = state.realiseContext(context);
+            auto rewrites = state.realiseContext(state, pos, context);
             path = rewriteStrings(path, rewrites);
         } catch (InvalidPathError & e) {
             state.debugThrowLastTrace(EvalError({
@@ -1967,7 +2106,7 @@ static void addPath(
     try {
         // FIXME: handle CA derivation outputs (where path needs to
         // be rewritten to the actual output).
-        auto rewrites = state.realiseContext(context);
+        auto rewrites = state.realiseContext(state, pos, context);
         path = state.toRealPath(rewriteStrings(path, rewrites), context);
 
         StorePathSet refs;

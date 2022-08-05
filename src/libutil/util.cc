@@ -987,6 +987,10 @@ Pid::~Pid()
     if (pid != -1) kill();
 }
 
+std::string Pid::to_string()
+{
+    return std::to_string(this->pid);
+}
 
 void Pid::operator =(pid_t pid)
 {
@@ -994,7 +998,6 @@ void Pid::operator =(pid_t pid)
     this->pid = pid;
     killSignal = SIGKILL; // reset signal to default
 }
-
 
 Pid::operator pid_t()
 {
@@ -1041,6 +1044,12 @@ int Pid::wait()
     }
 }
 
+bool Pid::exist()
+{
+    // If sig is 0, then no signal is sent, but error checking is still performed;
+    // this can be used to check for the existence of a process ID or process group ID.
+    return (0 != ::kill(pid, 0));
+}
 
 void Pid::setSeparatePG(bool separatePG)
 {

@@ -261,8 +261,10 @@ public:
     ~Pid();
     void operator =(pid_t pid);
     operator pid_t();
+    std::string to_string();
     int kill();
     int wait();
+    bool exist();
 
     void setSeparatePG(bool separatePG);
     void setKillSignal(int signal);

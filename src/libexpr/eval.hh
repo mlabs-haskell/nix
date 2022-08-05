@@ -7,6 +7,7 @@
 #include "symbol-table.hh"
 #include "config.hh"
 #include "experimental-features.hh"
+#include "util.hh"
 
 #include <map>
 #include <optional>
@@ -77,6 +78,8 @@ struct RegexCache;
 
 std::shared_ptr<RegexCache> makeRegexCache();
 
+typedef std::map<PosIdx, Pid> PidPool;
+
 struct DebugTrace {
     std::optional<ErrPos> pos;
     const Expr & expr;
@@ -125,6 +128,9 @@ public:
 
     RootValue vCallFlake = nullptr;
     RootValue vImportedDrvToDerivation = nullptr;
+
+    /* To keep track of different PIDs to realise path */
+    PidPool pidPool;
 
     /* Debugger */
     void (* debugRepl)(ref<EvalState> es, const ValMap & extraEnv);
@@ -507,7 +513,7 @@ public:
     /* Realise the given context, and return a mapping from the placeholders
      * used to construct the associated value to their final store path
      */
-    [[nodiscard]] StringMap realiseContext(const PathSet & context);
+    [[nodiscard]] StringMap realiseContext(EvalState & state, const PosIdx pos, const PathSet & context);
 
 private:
 
