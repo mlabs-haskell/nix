@@ -21,14 +21,12 @@ namespace nix {
                 , state({}, store)
             {
             }
-            Value eval(std::string input, bool forceValue = true) {
-                Value v;
+            void eval(Value & v, std::string input, bool forceValue = true) {
                 Expr * e = state.parseExprFromString(input, "");
                 assert(e);
                 state.eval(e, v);
                 if (forceValue)
                     state.forceValue(v, noPos);
-                return v;
             }
 
             Symbol createSymbol(const char * value) {

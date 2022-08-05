@@ -484,7 +484,7 @@ EvalState::EvalState(
     assert(gcInitialised);
 
     //FIXME(aciceri)
-    //static_assert(sizeof(Env) <= 16, "environment must be <= 16 bytes");
+    static_assert(sizeof(Env) <= 32, "environment must be <= 32 bytes");
 
     /* Initialise the Nix expression search path. */
     if (!evalSettings.pureEval) {
@@ -1094,7 +1094,7 @@ inline Value * EvalState::lookupVar(Env * env, const ExprVar & var, bool noEval)
 
     while (1) {
         Expr * withAttrs = env->withAttrs;
-        if (env->type == Env::HasWithExpr) {
+        if (withAttrs) {
             if (noEval) return 0;
             Value * v = allocValue();
             evalAttrs(*env->up, withAttrs, *v);
@@ -1553,7 +1553,7 @@ void ExprOpHasAttr::eval(EvalState & state, Env & env, Value & v)
     for (auto & i : attrPath) {
         state.forceValue(*vAttrs, noPos);
         //FIXME(aciceri)
-        //assert(vAttrs->type != tAttrs || vAttrs->attrs != 0);
+        assert(vAttrs->type() != nAttrs || vAttrs->attrs != 0);
         Bindings::iterator j;
         auto name = getName(i, state, env);
         if (vAttrs->type() != nAttrs ||
@@ -1584,7 +1584,7 @@ void EvalState::callFunction(Value & fun, size_t nrArgs, Value * * args, Value &
 
     forceValue(fun, pos);
 
-    Value vCur(fun);
+    Value& vCur = fun;
 
     auto makeAppChain = [&]()
     {
@@ -1839,7 +1839,7 @@ void ExprWith::eval(EvalState & state, Env & env, Value & v)
     Env & env2(state.allocEnv(1));
     env2.up = &env;
     env2.prevWith = prevWith;
-    //env2.type = Env::HasWithExpr;
+    env2.type = Env::HasWithExpr;
     //env2.values[0] = (Value *) attrs;
     env2.withAttrs = attrs;
 

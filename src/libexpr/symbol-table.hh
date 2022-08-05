@@ -70,7 +70,7 @@ class SymbolTable
 {
 private:
     //std::unordered_map<std::string_view, std::pair<const std::string *, uint32_t>> symbols;
-    mutable Sync<ChunkedVector<std::string, 8192>> store_{16};
+    mutable Sync<ChunkedVector<std::string, 8192>> store_{32};
     mutable Sync<std::unordered_map<std::string_view, std::pair<const std::string *, uint32_t>>> symbols_;
 
 public:

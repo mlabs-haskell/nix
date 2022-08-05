@@ -1008,8 +1008,9 @@ static void prim_second(EvalState & state, const PosIdx pos, Value * * args, Val
    derivation; `drvPath' containing the path of the Nix expression;
    and `type' set to `derivation' to indicate that this is a
    derivation. */
-static void prim_derivationStrict(EvalState & state, const PosIdx pos, Value * * args, Value & v)
+void prim_derivationStrict(EvalState & state, const PosIdx pos, Value * * args, Value & v)
 {
+    state.nrDerivations++;
     state.forceAttrs(*args[0], pos);
 
     /* Figure out the name first (for stack backtraces). */
@@ -2687,8 +2688,9 @@ static void elemAt(EvalState & state, const PosIdx pos, Value & list, int n, Val
             .msg = hintfmt("list index %1% is out of bounds", n),
             .errPos = state.positions[pos]
         }));
-    state.forceValue(*list.listElems()[n], pos);
-    v = *list.listElems()[n];
+    auto & v2 = *list.listElems()[n];
+    state.forceValue(v2, pos);
+    v = v2;
 }
 
 /* Return the n-1'th element of a list. */

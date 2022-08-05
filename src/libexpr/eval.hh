@@ -553,7 +553,7 @@ private:
     friend void prim_getAttr(EvalState & state, const PosIdx pos, Value * * args, Value & v);
     friend void prim_match(EvalState & state, const PosIdx pos, Value * * args, Value & v);
     friend void prim_split(EvalState & state, const PosIdx pos, Value * * args, Value & v);
-    friend void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * args, Value & v);
+    friend void prim_derivationStrict(EvalState & state, const PosIdx pos, Value * * args, Value & v);
 
     friend struct Value;
 };
