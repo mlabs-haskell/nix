@@ -19,9 +19,9 @@ makefiles = \
   misc/systemd/local.mk \
   misc/launchd/local.mk \
   misc/upstart/local.mk \
-  doc/manual/local.mk \
-  tests/local.mk \
-  tests/plugins/local.mk
+  # doc/manual/local.mk \
+  # tests/local.mk \
+  # ests/plugins/local.mk
 
 -include Makefile.config
 
@@ -36,4 +36,4 @@ endif
 
 include mk/lib.mk
 
-GLOBAL_CXXFLAGS += -ggdb -Wall -include config.h -std=c++17 -I src
+GLOBAL_CXXFLAGS += -g -Wall -include config.h -std=c++17 -I out

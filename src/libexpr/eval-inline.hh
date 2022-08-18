@@ -100,6 +100,10 @@ void EvalState::forceValue(Value & v, Callable getPos)
             throw;
         }
     }
+    else if (v.isMaybePath()) {
+        if (v.maybePath->finished)
+            v.mkPath(v.maybePath->path);
+        }
     else if (v.isApp())
         callFunction(*v.app.left, *v.app.right, v, noPos);
     else if (v.isBlackhole())

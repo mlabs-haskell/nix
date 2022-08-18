@@ -12,6 +12,10 @@ namespace nix {
 
 class BindingsBuilder;
 
+typedef struct {
+    bool finished;
+    char* path;
+} MaybePath;
 
 typedef enum {
     tInt = 1,
@@ -30,7 +34,8 @@ typedef enum {
     tPrimOp,
     tPrimOpApp,
     tExternal,
-    tFloat
+    tFloat,
+    tMaybePath,
 } InternalType;
 
 // This type abstracts over all actual value types in the language,
@@ -47,7 +52,8 @@ typedef enum {
     nAttrs,
     nList,
     nFunction,
-    nExternal
+    nExternal,
+    nMaybePath
 } ValueType;
 
 class Bindings;
@@ -134,6 +140,7 @@ public:
     // type() == nThunk
     inline bool isThunk() const { return internalType == tThunk; };
     inline bool isApp() const { return internalType == tApp; };
+    inline bool isMaybePath() const { return internalType == tMaybePath; };
     inline bool isBlackhole() const { return internalType == tBlackhole; };
 
     // type() == nFunction
@@ -172,6 +179,7 @@ public:
         } string;
 
         const char * path;
+        MaybePath * maybePath;
         Bindings * attrs;
         struct {
             size_t size;
@@ -213,6 +221,7 @@ public:
             case tExternal: return nExternal;
             case tFloat: return nFloat;
             case tThunk: case tApp: case tBlackhole: return nThunk;
+            case tMaybePath: return nMaybePath;
         }
         abort();
     }
@@ -259,6 +268,12 @@ public:
     }
 
     void mkPath(std::string_view s);
+
+    inline void mkMaybePath(MaybePath * mp) {
+        clearValue();
+        internalType = tMaybePath;
+        maybePath = mp;
+    }
 
     inline void mkNull()
     {

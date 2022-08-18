@@ -22,10 +22,6 @@ typedef std::string Path;
 typedef std::string_view PathView;
 typedef std::list<Path> Paths;
 typedef std::set<Path> PathSet;
-typedef struct {
-    bool finished;
-    Path path;
-} MaybePath;
 
 typedef std::vector<std::pair<std::string, std::string>> Headers;
 

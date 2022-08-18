@@ -911,6 +911,13 @@ std::ostream & NixRepl::printValue(std::ostream & str, Value & v, unsigned int m
         str << ANSI_GREEN << v.path << ANSI_NORMAL; // !!! escaping?
         break;
 
+    case nMaybePath:
+        if (v.maybePath->finished)
+            str << ANSI_GREEN << v.maybePath->path << ANSI_NORMAL; // !!! escaping?
+        else
+            str << ANSI_CYAN << "building" << ANSI_NORMAL; // !!! escaping?
+        break;
+
     case nNull:
         str << ANSI_CYAN "null" ANSI_NORMAL;
         break;

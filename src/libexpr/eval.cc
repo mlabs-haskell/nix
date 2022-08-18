@@ -217,6 +217,7 @@ std::string_view showType(ValueType type)
         case nBool: return "a Boolean";
         case nString: return "a string";
         case nPath: return "a path";
+        case nMaybePath: return "a maybePath";
         case nNull: return "null";
         case nAttrs: return "a set";
         case nList: return "a list";

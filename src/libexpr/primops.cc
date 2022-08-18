@@ -53,7 +53,7 @@ namespace nix {
 InvalidPathError::InvalidPathError(const Path & path) :
     EvalError("path '%s' is not valid", path), path(path) {}
 
-StringMap EvalState::realiseContext(EvalState & state, const PosIdx pos, const PathSet & context)
+StringMap EvalState::realiseContext(EvalState & state, const PosIdx pos, const PathSet & context, bool * ifd)
 {
     std::vector<DerivedPath::Built> drvs;
     StringMap res;
@@ -80,6 +80,11 @@ StringMap EvalState::realiseContext(EvalState & state, const PosIdx pos, const P
     /* Build/substitute the context. */
     std::vector<DerivedPath> buildReqs;
     for (auto & d : drvs) buildReqs.emplace_back(DerivedPath { d });
+    *ifd = false;
+    if (buildReqs.size() > 0) {
+        *ifd = true;
+        printError(hintfmt("IFD: %d", buildReqs.size()));
+    }
 
     // Pid pid = startProcess([&]() {
     
@@ -169,39 +174,44 @@ static MaybePath *realiseMaybePath(EvalState & state, const PosIdx pos, Value & 
     }();
 
     try {
-        int descriptor = shm_open("/identifier", O_RDWR | O_CREAT, 0777);
-        if (descriptor < 0) {
-                printError("error 00");
-        }
+        //int descriptor = shm_open("/identifier", O_RDWR | O_CREAT, 0777);
+        // if (descriptor < 0) {
+        //         printError("error 00");
+        // }
 
-        ftruncate(descriptor, sizeof(MaybePath));
+        //ftruncate(descriptor, sizeof(MaybePath));
         //void *ptr = mmap(NULL, sizeof(MaybePath), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, descriptor, 0);
-        MaybePath *maybePath = (MaybePath*) mmap(NULL, sizeof(MaybePath), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, descriptor, 0);
+        bool *ifd = (bool*) mmap(NULL, sizeof(bool), PROT_READ | PROT_WRITE , MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        MaybePath *maybePath = (MaybePath*) mmap(NULL, sizeof(MaybePath), PROT_READ | PROT_WRITE , MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        maybePath->path = (char*) mmap(NULL, sizeof(char)*100, PROT_READ | PROT_WRITE , MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+
 
         if (!maybePath || maybePath == MAP_FAILED) {
                 printError("error 01");
         }
 
-        //MaybePath *maybePath = new (ptr) MaybePath;
-        maybePath->finished = false;
-    
+        pid_t pid = fork();
 
-        Pid pid = startProcess([&]() {
+        if (pid == 0) {
+            //MaybePath *maybePath = new (ptr) MaybePath;
+            maybePath->finished = false;
 
-            int d = shm_open("/identifier", O_RDWR | O_CREAT, 0777);
-            if (d < 0) {
-                /* handle error */ ;
-                printError("error 10");
-            }
+        //Pid pid = startProcess([&]() {
 
-            MaybePath *mPath = (MaybePath *) mmap(NULL, sizeof(MaybePath), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, d, 0);
+            //int d = shm_open("/identifier", O_RDWR | O_CREAT, 0777);
+            // if (d < 0) {
+            //     /* handle error */ ;
+            //     printError("error 10");
+            // }
 
-            if (!mPath || mPath == MAP_FAILED) {
-                /* handle error */ ;
-                printError("error 11");
-            }
-            
-            StringMap rewrites = state.realiseContext(state, pos, context);
+            //MaybePath *mPath = (MaybePath *) mmap(NULL, sizeof(MaybePath), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, descriptor, 0);
+
+            // if (!mPath || mPath == MAP_FAILED) {
+            //     /* handle error */ ;
+            //     printError("error 11");
+            // }
+
+            StringMap rewrites = state.realiseContext(state, pos, context, ifd);
 
             //TODO
             auto realPath = state.toRealPath(rewriteStrings(path, rewrites), context);
@@ -213,16 +223,21 @@ static MaybePath *realiseMaybePath(EvalState & state, const PosIdx pos, Value & 
             //     : realPath;
             // mPath->path = path;
 
-            mPath->path = realPath;
-            mPath->finished = true;
-            
-            //_exit(0);
+            // maybePath->path = realPath.c_str();
 
-        });
+            // strcpy(maybePath->path, realPath.c_str());
 
-        //sleep(3);
-        printError(maybePath->finished ? "finished" : "not finished");
-        printError(maybePath->path);
+            strcpy(maybePath->path, realPath.c_str());
+            maybePath->finished = true;
+            _exit(0);
+
+        //});
+        };
+
+        if (*ifd) {
+            printError("IFD");
+            while(!maybePath->finished) {usleep(50);}
+        }
 
         //printError(hintfmt("pointer in realiseMaybePath %x", maybePath));
 
@@ -231,6 +246,7 @@ static MaybePath *realiseMaybePath(EvalState & state, const PosIdx pos, Value & 
 
     } catch (Error & e) {
         e.addTrace(state.positions[pos], "while realising the context of path '%s'", path);
+
         throw;
     }
 }
@@ -267,38 +283,33 @@ static void mkOutputString(
         {"!" + o.first + "!" + state.store->printStorePath(drvPath)});
 }
 
-/* Load and evaluate an expression from path specified by the
-   argument. */
-static void import(EvalState & state, const PosIdx pos, Value & vPath, Value * vScope, Value & v)
-{
-    //printError(hintfmt("ciao"));
-    printError(hintfmt("importing %s (%s)", vPath.path, showType(vPath)));
-    MaybePath *maybePath = realiseMaybePath(state, pos, vPath);
-    printError(hintfmt("imported %s (%s)", vPath.path, showType(vPath)));
+    //printError(hintfmt("importing %s (%s)", vPath.path, showType(vPath)));
+    //printError(hintfmt("imported %s (%s)", vPath.path, showType(vPath)));
     //vPath.print(state.symbols, std::cerr, false);
     // std::cerr << state.pidPool[pos];
-    //printError(hintfmt("pid %d", state.pidPool[pos].to_string())); 
+    //printError(hintfmt("pid %d", state.pidPool[pos].to_string()));
     //state.pidPool[pos].wait();
-  
-    // heisenbug
-    printError(hintfmt("pointer in import %x", maybePath));
 
-    while (maybePath->finished == false) {
-        sleep(1);
-        printError(hintfmt("waiting for %s: %s", maybePath->path, maybePath->finished));
-    } 
+    //printError(hintfmt("pointer in import %x", maybePath));
+    //printError(hintfmt("%s %s", maybePath->path, maybePath->finished));
 
-    Path path = maybePath->path;
-    printError(hintfmt("path %s", maybePath->path)); 
+    // while (maybePath->finished == false) {
+    //     printError(hintfmt("waiting for %s: %s", maybePath->path, maybePath->finished));
+    // }
 
+    //Path path = maybePath->path;
+    //printError(hintfmt("path %s", maybePath->path));
 
     // while (true) {
     //     if (maybePath->path != "") {
     //         path = maybePath->path;
-    //         printError(hintfmt("path %s", maybePath->path)); 
+    //         printError(hintfmt("path %s", maybePath->path));
     //         break;
     //     }
     // }
+
+
+static void old_import(EvalState & state, const PosIdx pos, std::string path, Value * vScope, Value & v) {
 
     // FIXME
     auto isValidDerivationInStore = [&]() -> std::optional<StorePath> {
@@ -309,7 +320,6 @@ static void import(EvalState & state, const PosIdx pos, Value & vPath, Value * v
             return std::nullopt;
         return storePath;
     };
-
 
     if (auto optStorePath = isValidDerivationInStore()) {
         auto storePath = *optStorePath;
@@ -374,12 +384,105 @@ static void import(EvalState & state, const PosIdx pos, Value & vPath, Value * v
     }
 }
 
+
+/* Load and evaluate an expression from path specified by the
+   argument. */
+static void working_import(EvalState & state, const PosIdx pos, Value * vPath, Value * vScope, Value & v)
+{
+    // printError("0");
+    // if (vPath->type() == nMaybePath) {
+    //     if (vPath->maybePath.finished) {
+    //         printError("1");
+    //         v.mkPath(vPath->maybePath.path);
+    //     } else {
+    //         printError("2");
+    //         v.mkThunk(&state.baseEnv, state.parseExprFromString("42", "/"));
+    //         //v.mkApp(*state.vImportedDrvToDerivation, w);
+    //         //return expr with thunk that evaluate to maybepath type
+    //         return;
+    //     }
+    // } else {
+    //   printError("3");
+      MaybePath* maybePath = realiseMaybePath(state, pos, *vPath);
+      //while (!maybePath->finished) sleep(1);
+      //auto vMaybePath = state.allocValue();
+      //vMaybePath->mkMaybePath(maybePath);
+      //import(state, pos, vMaybePath, vScope, v);
+      printError(maybePath->path);
+      printError(maybePath->finished ? "f" : "nf");
+
+
+
+
+      v.mkMaybePath(maybePath);
+    //}
+}
+
+
+static void import(EvalState & state, const PosIdx pos, Value * vPath, Value * vScope, Value & v)
+{
+    if (vPath->type() == nMaybePath) {
+        if (!vPath->maybePath->finished) {
+      Value * primop = state.allocValue();
+      primop->mkPrimOp(new PrimOp {
+    .fun = [](EvalState & state, const PosIdx pos, Value * * args, Value & v)
+    {
+        import(state, pos, args[0], nullptr, v);
+    },
+        .arity = 1,
+    .name = "import"
+    });
+
+    v.mkPrimOpApp(primop, vPath);
+    // auto vRes = state->allocValue();
+    // state.forceFunction(vRes, pos);
+
+    auto vRes = state.allocValue();
+    state.callFunction(*primop, *vPath, *vRes, pos);
+    v = *vRes;
+
+          return;
+        } else {
+            old_import(state, pos, vPath->maybePath->path, vScope, v);
+        }
+        return;
+    } else {
+      MaybePath* maybePath = realiseMaybePath(state, pos, *vPath);
+      //while (!maybePath->finished) sleep(1);
+      //auto vMaybePath = state.allocValue();
+      //vMaybePath->mkMaybePath(maybePath);
+      //import(state, pos, vMaybePath, vScope, v);
+
+
+      Value * primop = state.allocValue();
+      primop->mkPrimOp(new PrimOp {
+    .fun = [](EvalState & state, const PosIdx pos, Value * * args, Value & v)
+    {
+        import(state, pos, args[0], nullptr, v);
+    },
+        .arity = 1,
+    .name = "import"
+    });
+
+    Value * mb = state.allocValue();
+    mb->mkMaybePath(maybePath);
+    v.mkPrimOpApp(primop, mb);
+    // auto vRes = state->allocValue();
+    // state.forceFunction(vRes, pos);
+
+    auto vRes = state.allocValue();
+    state.callFunction(*primop, *mb, *vRes, pos);
+    v = *vRes;
+}
+    }
+
+
 static RegisterPrimOp primop_scopedImport(RegisterPrimOp::Info {
     .name = "scopedImport",
     .arity = 2,
     .fun = [](EvalState & state, const PosIdx pos, Value * * args, Value & v)
     {
-        import(state, pos, *args[1], args[0], v);
+        import(state, pos, args[1], args[0], v);
     }
 });
 
@@ -441,7 +544,7 @@ static RegisterPrimOp primop_import({
     )",
     .fun = [](EvalState & state, const PosIdx pos, Value * * args, Value & v)
     {
-        import(state, pos, *args[0], nullptr, v);
+        import(state, pos, args[0], nullptr, v);
     }
 });
 
@@ -531,6 +634,7 @@ static void prim_typeOf(EvalState & state, const PosIdx pos, Value * * args, Val
         case nBool: t = "bool"; break;
         case nString: t = "string"; break;
         case nPath: t = "path"; break;
+        case nMaybePath: t = "maybePath"; break;
         case nNull: t = "null"; break;
         case nAttrs: t = "set"; break;
         case nList: t = "list"; break;
