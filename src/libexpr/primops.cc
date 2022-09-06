@@ -53,7 +53,7 @@ namespace nix {
 InvalidPathError::InvalidPathError(const Path & path) :
     EvalError("path '%s' is not valid", path), path(path) {}
 
-StringMap EvalState::realiseContext(EvalState & state, const PosIdx pos, const PathSet & context, bool * ifd)
+StringMap EvalState::realiseContext(EvalState & state, const PosIdx pos, const PathSet & context, bool * ifd, bool * checked_if_ifd)
 {
     std::vector<DerivedPath::Built> drvs;
     StringMap res;
@@ -80,14 +80,11 @@ StringMap EvalState::realiseContext(EvalState & state, const PosIdx pos, const P
     /* Build/substitute the context. */
     std::vector<DerivedPath> buildReqs;
     for (auto & d : drvs) buildReqs.emplace_back(DerivedPath { d });
-    *ifd = false;
-    if (buildReqs.size() > 0) {
-        *ifd = true;
-        printError(hintfmt("IFD: %d", buildReqs.size()));
-    }
+    printError("qui");
+    *ifd = buildReqs.size() > 0;
+    *checked_if_ifd = true;
 
     // Pid pid = startProcess([&]() {
-    
     // });
 
     // printError(hintfmt("pid is %s", pid.to_string()));
@@ -181,9 +178,12 @@ static MaybePath *realiseMaybePath(EvalState & state, const PosIdx pos, Value & 
 
         //ftruncate(descriptor, sizeof(MaybePath));
         //void *ptr = mmap(NULL, sizeof(MaybePath), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, descriptor, 0);
-        bool *ifd = (bool*) mmap(NULL, sizeof(bool), PROT_READ | PROT_WRITE , MAP_SHARED | MAP_ANONYMOUS, -1, 0);
         MaybePath *maybePath = (MaybePath*) mmap(NULL, sizeof(MaybePath), PROT_READ | PROT_WRITE , MAP_SHARED | MAP_ANONYMOUS, -1, 0);
         maybePath->path = (char*) mmap(NULL, sizeof(char)*100, PROT_READ | PROT_WRITE , MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        maybePath->finished = false;
+        bool *ifd = (bool*) mmap(NULL, sizeof(bool), PROT_READ | PROT_WRITE , MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        bool *checked_if_ifd = (bool*) mmap(NULL, sizeof(bool), PROT_READ | PROT_WRITE , MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        *checked_if_ifd = false;
 
 
         if (!maybePath || maybePath == MAP_FAILED) {
@@ -194,7 +194,6 @@ static MaybePath *realiseMaybePath(EvalState & state, const PosIdx pos, Value & 
 
         if (pid == 0) {
             //MaybePath *maybePath = new (ptr) MaybePath;
-            maybePath->finished = false;
 
         //Pid pid = startProcess([&]() {
 
@@ -211,7 +210,7 @@ static MaybePath *realiseMaybePath(EvalState & state, const PosIdx pos, Value & 
             //     printError("error 11");
             // }
 
-            StringMap rewrites = state.realiseContext(state, pos, context, ifd);
+            StringMap rewrites = state.realiseContext(state, pos, context, ifd, checked_if_ifd);
 
             //TODO
             auto realPath = state.toRealPath(rewriteStrings(path, rewrites), context);
@@ -233,10 +232,15 @@ static MaybePath *realiseMaybePath(EvalState & state, const PosIdx pos, Value & 
 
         //});
         };
-
+        while (!*checked_if_ifd) {
+            printError(*checked_if_ifd ? "checked" : "not checked");
+            usleep(50);
+        }
         if (*ifd) {
             printError("IFD");
             while(!maybePath->finished) {usleep(50);}
+        } else {
+            printError("non IFD");
         }
 
         //printError(hintfmt("pointer in realiseMaybePath %x", maybePath));

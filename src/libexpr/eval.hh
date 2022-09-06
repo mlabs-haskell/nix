@@ -513,7 +513,7 @@ public:
     /* Realise the given context, and return a mapping from the placeholders
      * used to construct the associated value to their final store path
      */
-    [[nodiscard]] StringMap realiseContext(EvalState & state, const PosIdx pos, const PathSet & context, bool * ifd = nullptr);
+    [[nodiscard]] StringMap realiseContext(EvalState & state, const PosIdx pos, const PathSet & context, bool * ifd = nullptr, bool * checked_if_ifd = nullptr);
 
 private:
 
